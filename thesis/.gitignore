@@ -1,0 +1,19 @@
+# LaTeX intermediate files
+*.aux
+*.log
+*.toc
+*.out
+*.lof
+*.lot
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.pdf
+_build/
+_texput.log
+
+# Claude Code files
+CLAUDE.md
+docs/

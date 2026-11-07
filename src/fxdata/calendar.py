@@ -78,15 +78,25 @@ def load_calendar(path, source_tz: str, currencies=("USD", "EUR")) -> tuple[pd.D
 
     log = {"rows_raw": len(raw)}
     dt_text = raw[m["datetime"]].str.strip()
-    if m["time"] is not None and m["time"] != m["datetime"]:
+    # Огноо, цаг тусдаа баганад байвал нийлүүлнэ (огнооны баганад цаг аль хэдийн байвал нийлүүлэхгүй)
+    if m["time"] is not None and m["time"] != m["datetime"] and dt_text.str.contains(":").mean() < 0.5:
         dt_text = dt_text + " " + raw[m["time"]].str.strip()
 
     # "All Day", "Tentative", "Day 1" гэх мэт тодорхой цаггүй мөр
     time_known = ~dt_text.str.contains(r"all day|tentative|day \d", case=False, regex=True)
-    local = pd.to_datetime(dt_text.where(time_known), errors="coerce", format="mixed")
-    if getattr(local.dt, "tz", None) is None:
+    txt = dt_text.where(time_known)
+    # Цаг өөрөө UTC зөрүүтэй бол ("…+04:30") түүгээр нь шууд UTC болгоно — хамгийн найдвартай.
+    # Зөрүүгүй бол source_tz бүсээр (зуны цагийг тооцож) хөрвүүлнэ.
+    has_off = txt.str.contains(r"(?:[+-]\d{2}:?\d{2}|Z)$", regex=True, na=False)
+    ts_utc = pd.Series(pd.NaT, index=txt.index, dtype="datetime64[ns, UTC]")
+    if has_off.any():
+        ts_utc[has_off] = pd.to_datetime(txt[has_off], errors="coerce", format="mixed", utc=True)
+    naive = time_known & ~has_off
+    if naive.any():
+        local = pd.to_datetime(txt[naive], errors="coerce", format="mixed")
         local = local.dt.tz_localize(source_tz, ambiguous="NaT", nonexistent="NaT")
-    ts_utc = local.dt.tz_convert("UTC")
+        ts_utc[naive] = local.dt.tz_convert("UTC")
+    log["time_with_offset"] = int(has_off.sum())
 
     ev = pd.DataFrame({
         "ts_utc": ts_utc,
