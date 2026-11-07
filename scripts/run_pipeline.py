@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import pandas as pd  # noqa: E402
 
-from fxdata import db, prices, quality, calendar, merge  # noqa: E402
+from fxdata import db, prices, quality, calendar, merge, timing  # noqa: E402
 
 
 def main():
@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--out", default="data/processed")
     ap.add_argument("--start", default="2015-01-01")
     ap.add_argument("--end", default="2026-01-01")
+    ap.add_argument("--keep-db", action="store_true",
+                    help="Хуучин DB-г устгахгүй (анхдагчаар дахин үүсгэнэ: INSERT OR IGNORE хуучин буруу мөрийг үлдээдэг)")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -59,7 +61,10 @@ def main():
     clean.to_parquet(out / "eurusd_h1.parquet")
     issues.to_csv(out / "quality_issues.csv", index=False)
 
-    con = db.connect(ROOT / a.db if not Path(a.db).is_absolute() else a.db)
+    db_path = ROOT / a.db if not Path(a.db).is_absolute() else Path(a.db)
+    if db_path.exists() and not a.keep_db:
+        db_path.unlink()
+    con = db.connect(db_path)
     db.write_candles(con, duka, "dukascopy", unclean=unclean)
     db.write_issues(con, issues)
 
@@ -74,12 +79,24 @@ def main():
         db.write_candle_events(con, cmap)
         report["calendar"]["shifted_to_next_candle"] = int(cmap["shifted"].sum())
         feats = merge.news_features(clean, ev)
-        clean.join(feats).to_parquet(out / "eurusd_h1_with_news.parquet")
+        # Календарь дууссаны дараах лаанд мэдээний шинж хүчингүй (hours_since_event зүгээр л өснө)
+        cal_end = ev["ts_utc"].max().ceil("D")
+        with_news = clean.join(feats)
+        with_news = with_news[with_news.index < cal_end]
+        with_news.to_parquet(out / "eurusd_h1_with_news.parquet")
+        report["calendar"]["with_news_range"] = [str(with_news.index.min()), str(with_news.index.max())]
+        report["calendar"]["candles_after_calendar_end_dropped"] = int((clean.index >= cal_end).sum())
         # Spike-уудын хэд нь өндөр нөлөөтэй мэдээний цагт таарч байна вэ? (бодит хөдөлгөөн эсэх)
         sp = issues.loc[issues.issue == "spike", "ts"]
-        hi_hours = set(ev.loc[ev.impact == "high", "ts_utc"].dt.floor("h"))
+        hi = ev[ev.impact == "high"]
+        hi_hours = set(hi["ts_utc"].dt.floor("h"))
         report["spikes_on_high_news_hours"] = int(sum(t in hi_hours for t in sp))
         report["spikes_total"] = int(len(sp))
+        # Мэдээний цаг зөв лаанд буусан эсэх (event study): оргил t=0 дээр байх ёстой
+        es = timing.event_study(clean, hi)
+        es.to_csv(out / "news_timing_check.csv")
+        timing.plot_event_study({"Өндөр нөлөөтэй мэдээ (time_source-аар)": es}, out / "news_timing_check.png")
+        report["news_timing_check"] = es.round(2).to_dict(orient="index")
 
     (out / "pipeline_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))

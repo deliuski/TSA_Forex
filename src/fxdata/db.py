@@ -49,12 +49,12 @@ def write_events(con, ev: pd.DataFrame, source="forexfactory") -> pd.DataFrame:
     nz = lambda x: None if pd.isna(x) else float(x)
     rows = [
         (ts, r.currency, r.impact, r.title, nz(r.actual), nz(r.forecast), nz(r.previous),
-         nz(r.surprise), nz(r.surprise_z), r.raw_time_text, source)
+         nz(r.surprise), nz(r.surprise_z), r.raw_time_text, getattr(r, "time_source", None), source)
         for ts, r in zip(_iso(ev["ts_utc"]), ev.itertuples())
     ]
     con.executemany(
-        "INSERT OR IGNORE INTO econ_events(ts_utc,currency,impact,title,actual,forecast,previous,surprise,surprise_z,raw_time_text,source)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+        "INSERT OR IGNORE INTO econ_events(ts_utc,currency,impact,title,actual,forecast,previous,surprise,surprise_z,raw_time_text,time_source,source)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     con.commit()
     ids = pd.read_sql("SELECT event_id, ts_utc, currency, title FROM econ_events", con)
     ids["ts_utc"] = pd.to_datetime(ids["ts_utc"], utc=True)

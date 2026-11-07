@@ -14,9 +14,13 @@ import pandas as pd
 
 OHLCV = ["open", "high", "low", "close", "volume"]
 
-# HistData: "Eastern Standard Time WITHOUT daylight saving" = жилийн турш UTC-5.
-# "America/New_York" ашиглавал зуны цагийн үед 1 цагаар зөрнө — энэ бол түгээмэл алдаа.
-HISTDATA_UTC_OFFSET_HOURS = 5
+# HistData-ийн баримт бичигт "EST without DST" (тогтмол UTC-5) гэж бичсэн ч энэ төслийн
+# 2015–2025 оны файлуудыг Dukascopy (UTC)-тай тулгахад бодит байдал өөр гарсан:
+#   тогтмол +5 цаг:      өвөл 0.01 пип, зун 5.0 пип зөрүү (зун 1 цагаар хоцорно)
+#   America/New_York:    өвөл ба зун хоёулаа ~0 пип
+# Dukascopy-ийн UTC зөв болохыг NFP-ээр баталсан: зун 12:00 UTC, өвөл 13:00 UTC лаа хамгийн том.
+# Тиймээс HistData-г Нью-Йоркийн зуны цагтай бүсээр хөрвүүлнэ.
+HISTDATA_TZ = "America/New_York"
 
 
 def load_dukascopy_csv(paths: list[Path] | Path) -> pd.DataFrame:
@@ -50,12 +54,14 @@ def _read_histdata_frame(fh) -> pd.DataFrame:
         dtype={"dt": str},
     )
     local = pd.to_datetime(df["dt"], format="%Y%m%d %H%M%S")
-    df["ts"] = (local + pd.Timedelta(hours=HISTDATA_UTC_OFFSET_HOURS)).dt.tz_localize("UTC")
+    # Зах зээл Ням 17:00 NY-д нээгддэг тул зуны цагийн шилжилтийн цаг (Ням 02:00) хаалттай байна.
+    df["ts"] = local.dt.tz_localize(HISTDATA_TZ, ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC")
+    df = df[df["ts"].notna()]
     return df[["ts", *OHLCV]]
 
 
 def load_histdata_m1(paths: list[Path] | Path) -> pd.DataFrame:
-    """HistData Generic ASCII M1 (zip эсвэл csv). Цагийг UTC руу хөрвүүлнэ (+5 цаг)."""
+    """HistData Generic ASCII M1 (zip эсвэл csv). Цагийг America/New_York-оос UTC руу хөрвүүлнэ."""
     if isinstance(paths, (str, Path)):
         paths = [Path(paths)]
     frames = []

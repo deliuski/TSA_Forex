@@ -1,0 +1,97 @@
+{
+  "horizon": 24,
+  "k": 5,
+  "threshold_atr": 2.4743616236705708,
+  "names": [
+    "Хажуу тийш (range)",
+    "Тогтвортой өсөлт",
+    "Тогтвортой уналт",
+    "Эхлээд унаад буцаж өснө",
+    "Эхлээд өсөөд буцаж унана"
+  ],
+  "trained_until": "2025-04-03 20:00:00+00:00",
+  "models": {
+    "live_news": {
+      "feature_set": "A+D(хуваарь)",
+      "columns": [
+        "ret_1",
+        "ret_3",
+        "ret_6",
+        "ret_12",
+        "ret_24",
+        "ret_72",
+        "vol_24",
+        "vol_ratio_24_240",
+        "atr_rel",
+        "atr_ratio_14_100",
+        "bar_range_atr",
+        "body_atr",
+        "range24_atr",
+        "vol_tick_ratio",
+        "hour_sin",
+        "hour_cos",
+        "dow",
+        "ev_count",
+        "ev_usd",
+        "ev_eur",
+        "hours_since_event",
+        "hours_to_next_event",
+        "event_within_24h"
+      ],
+      "n_iter": 39,
+      "test_metrics": {
+        "logloss": 1.5013610273913853,
+        "brier": 0.7578952308472875,
+        "acc": 0.3255625562556256,
+        "top2_acc": 0.5787578757875788,
+        "best_iter": 34,
+        "n_features": 23,
+        "logloss_gain_vs_baseline_pct": 1.55209825398539,
+        "gain_ci95": [
+          0.016318931278288623,
+          0.03116133763304609
+        ],
+        "vs_A_ci95": [
+          0.0006772620949212467,
+          0.01028439609867595
+        ]
+      }
+    },
+    "live_nonews": {
+      "feature_set": "A",
+      "columns": [
+        "ret_1",
+        "ret_3",
+        "ret_6",
+        "ret_12",
+        "ret_24",
+        "ret_72",
+        "vol_24",
+        "vol_ratio_24_240",
+        "atr_rel",
+        "atr_ratio_14_100",
+        "bar_range_atr",
+        "body_atr",
+        "range24_atr",
+        "vol_tick_ratio",
+        "hour_sin",
+        "hour_cos",
+        "dow"
+      ],
+      "n_iter": 32,
+      "test_metrics": {
+        "logloss": 1.506686025852626,
+        "brier": 0.7610166249592877,
+        "acc": 0.31566156615661567,
+        "top2_acc": 0.5696669666966697,
+        "best_iter": 28,
+        "n_features": 17,
+        "logloss_gain_vs_baseline_pct": 1.2029251265726182,
+        "gain_ci95": [
+          0.012033897342396958,
+          0.02440560083361261
+        ]
+      }
+    }
+  }
+}

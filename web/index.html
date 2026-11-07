@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EUR/USD — 24 цагийн хувилбарууд</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161a21; --line: #262c36; --text: #d6dbe3; --muted: #8a93a3;
+    --c0: #9aa4b2; --c1: #3fb27f; --c2: #e5534b; --c3: #4f8cf0; --c4: #f0a33c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0 12px 0 0; font-weight: 600; }
+  .kv { color: var(--muted); } .kv b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .spacer { flex: 1; }
+  select, button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 0; height: calc(100vh - var(--hdr, 58px)); min-height: 560px; }
+  #chart { position: relative; border-right: 1px solid var(--line); }
+  #strip { position: absolute; top: 0; left: 0; z-index: 3; pointer-events: none; }
+  #chart .now-label { position: absolute; bottom: 34px; left: 52px; z-index: 3; color: var(--muted); font-size: 12px; pointer-events: none; }
+  aside { overflow-y: auto; padding: 14px 16px 24px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; font-weight: 600; }
+  h2:first-child { margin-top: 0; }
+  .scen { border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; margin-bottom: 8px; background: var(--panel); cursor: pointer; user-select: none; }
+  .scen.off { opacity: .4; }
+  .scen .row { display: flex; align-items: center; gap: 8px; }
+  .scen .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .scen .name { flex: 1; font-weight: 500; }
+  .scen .pct { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .bar { position: relative; height: 6px; background: #222833; border-radius: 3px; margin: 7px 0 5px; }
+  .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+  .bar .base { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fff; opacity: .55; }
+  .scen .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .delta.up { color: #8fd18f; } .delta.down { color: #e79a95; }
+  .note { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  td, th { padding: 4px 4px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  .hit { color: #8fd18f; } .miss { color: #e79a95; } .wait { color: var(--muted); }
+  .ev { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .ev .t { color: var(--muted); width: 92px; flex: none; font-variant-numeric: tabular-nums; }
+  .score { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .score div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; }
+  .score small { display: block; color: var(--muted); font-size: 11px; }
+  .score b { font-size: 15px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 14px; height: 10px; border-radius: 2px; display: inline-block; }
+  label.tog { color: var(--muted); display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  footer { color: var(--muted); font-size: 11px; margin-top: 18px; }
+  footer a { color: var(--muted); }
+  #err { display: none; position: absolute; inset: 0; z-index: 5; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 20px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } #chart { height: 60vh; border-right: 0; border-bottom: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>EUR/USD · дараагийн 24 цагийн хувилбарууд</h1>
+  <span class="kv">Таамаглал: <b id="madeAt">—</b></span>
+  <span class="kv">Хаалт: <b id="close">—</b></span>
+  <span class="kv">ATR(14): <b id="atr">—</b></span>
+  <span class="kv">Загвар: <b id="model">—</b></span>
+  <span class="kv">Дараагийн шинэчлэлт: <b id="countdown">—</b></span>
+  <span class="spacer"></span>
+  <span style="display:inline-flex;gap:14px;align-items:center;white-space:nowrap">
+  <label class="kv">Цаг: <select id="tz"><option value="0">UTC</option><option value="8">Улаанбаатар (UTC+8)</option></select></label></span>
+</header>
+<main>
+  <div id="chart"><canvas id="strip"></canvas><div class="now-label" id="nowLabel"></div><div id="err"></div></div>
+  <aside>
+    <h2>Ирэх 24 цагийн хүрээ (high − low)</h2>
+    <div class="scen" id="rangeCard" style="cursor:default"></div>
+
+    <h2>Хувилбарууд <span style="text-transform:none;letter-spacing:0">(дарж нуух/харуулах)</span></h2>
+    <div id="scenarios"></div>
+    <p class="note">Цагаан зураас = ердийн үеийн давтамж. Хувилбарууд ATR-д харьцангуй: хэлбэлзэл өндөр үед "range" ч пипээр том байж болно. Хамгийн магадлалтай хувилбарын 20–80%-ийн хүрээг тасархай шугамаар харуулав.</p>
+
+    <p class="note">Чартын дээд туузанд Токио, Лондон, Нью-Йорк сессийн цаг (хот бүрийн 08–17 цаг, зуны цагийг тооцсон), улаан цэг нь өндөр нөлөөтэй мэдээ. EUR/USD-ийн хамгийн их хөдөлгөөн Лондон ба Нью-Йоркийн давхцлын үед болдог.</p>
+
+    <h2>Ойрын 48 цагийн өндөр нөлөөтэй мэдээ</h2>
+    <div id="events"></div>
+
+    <h2>Бодит цагийн үнэлгээ</h2>
+    <div class="score">
+      <div><small>Үнэлэгдсэн</small><b id="sN">0</b></div>
+      <div><small>Log-loss / baseline</small><b id="sLL">—</b></div>
+      <div><small>1-р хувилбар таарсан</small><b id="sHit">—</b></div>
+    </div>
+
+    <h2>Сүүлийн таамаглалууд</h2>
+    <table><thead><tr><th>Цаг (UTC)</th><th>Таамаг</th><th>Бодит</th><th></th></tr></thead><tbody id="hist"></tbody></table>
+
+    <footer>
+      <p id="disclaimer"></p>
+      <p>Чарт: <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a> Lightweight Charts™ (Apache 2.0). Өгөгдөл: Dukascopy, ForexFactory.</p>
+    </footer>
+  </aside>
+</main>
+
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<script>
+const LWC = LightweightCharts;
+const COLORS = ["#9aa4b2", "#3fb27f", "#e5534b", "#4f8cf0", "#f0a33c"];
+const HOUR = 3600;
+let chart, candleSeries, scenSeries = {}, bandSeries = [], markersApi = null;
+const LANES = [["tokyo", "Токио", "#7c6bc4"], ["london", "Лондон", "#3f7fd9"], ["newyork", "Нью-Йорк", "#c98a2e"]];
+const STRIP_H = 58;
+let data = null, hidden = new Set(), tzShift = 0;
+
+const $ = (id) => document.getElementById(id);
+const fmtPips = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(0);
+const shift = (t) => t + tzShift * HOUR;
+const fmtTime = (unix) => {
+  const d = new Date((unix + tzShift * HOUR) * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+};
+
+function initChart() {
+  chart = LWC.createChart($("chart"), {
+    autoSize: true,
+    layout: { background: { type: "solid", color: "#0f1115" }, textColor: "#aab2bf", attributionLogo: true, fontSize: 12 },
+    grid: { vertLines: { color: "#1b2029" }, horzLines: { color: "#1b2029" } },
+    rightPriceScale: { borderColor: "#262c36" },
+    timeScale: { borderColor: "#262c36", timeVisible: true, secondsVisible: false, rightOffset: 4 },
+    crosshair: { mode: LWC.CrosshairMode.Normal },
+    localization: { priceFormatter: (p) => p.toFixed(5) },
+  });
+  candleSeries = chart.addSeries(LWC.CandlestickSeries, {
+    upColor: "#3fb27f", downColor: "#e5534b", borderVisible: false, wickUpColor: "#3fb27f", wickDownColor: "#e5534b",
+    priceFormat: { type: "price", precision: 5, minMove: 0.00001 },
+  });
+  // Дээд туузанд зай гаргана
+  chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.16, bottom: 0.06 } });
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(drawStrip));
+  new ResizeObserver(() => requestAnimationFrame(drawStrip)).observe($("chart"));
+}
+
+// Сесс ба мэдээг чартын дээд талын нимгэн туузанд зурна (лааны цагтай синхрон)
+function drawStrip() {
+  const cv = $("strip"), box = $("chart");
+  const W = box.clientWidth - chart.priceScale("right").width();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = STRIP_H * dpr; cv.style.width = W + "px"; cv.style.height = STRIP_H + "px";
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, STRIP_H);
+  if (!data || !data.sessions) return;
+  const ts = chart.timeScale();
+  const valid = new Set(data.candles.map((c) => c.time));
+  data.scenarios[0].path.forEach((p) => valid.add(p.time));
+  const n = data.candles.length;
+  const sp = Math.max(1, (ts.timeToCoordinate(shift(data.candles[n - 1].time)) ?? 0) - (ts.timeToCoordinate(shift(data.candles[n - 2].time)) ?? 0));
+  const X = (t) => ts.timeToCoordinate(shift(t));
+  const hours = data.sessions.filter((h) => valid.has(h.time));
+  const p2 = (v) => String(v).padStart(2, "0");
+  const hh = (t) => p2(new Date((t + tzShift * HOUR) * 1000).getUTCHours());
+  g.font = "11px system-ui, sans-serif"; g.textBaseline = "middle";
+  LANES.forEach(([key, label, color], li) => {
+    const y = 4 + li * 14;
+    let run = null;
+    const flush = () => {
+      if (!run) return;
+      const x0 = X(run.a), x1 = X(run.b);
+      if (x0 == null || x1 == null) { run = null; return; }
+      const l = x0 - sp / 2, w = x1 - x0 + sp;
+      if (l + w > 0 && l < W) {
+        g.fillStyle = color; g.globalAlpha = 0.85;
+        g.beginPath(); g.roundRect(l, y, w, 11, 3); g.fill(); g.globalAlpha = 1;
+        const txt = `${label} ${hh(run.a)}–${hh(run.b + HOUR)}`;
+        if (w > g.measureText(txt).width + 8) { g.fillStyle = "#fff"; g.fillText(txt, Math.max(l, 0) + 4, y + 6); }
+        else if (w > g.measureText(label).width + 8) { g.fillStyle = "#fff"; g.fillText(label, Math.max(l, 0) + 4, y + 6); }
+      }
+      run = null;
+    };
+    for (const h of hours) {
+      if (!h.s.includes(key)) { flush(); continue; }
+      if (run && h.time - run.b === HOUR) run.b = h.time; else { flush(); run = { a: h.time, b: h.time }; }
+    }
+    flush();
+  });
+  // Мэдээ: улаан цэг (4 дэх мөр)
+  const yN = 4 + 3 * 14 + 5;
+  g.fillStyle = "#e5534b";
+  for (const t of data.news_hours || []) {
+    if (!valid.has(t)) continue;
+    const x = X(t);
+    if (x == null || x < 0 || x > W) continue;
+    g.beginPath(); g.arc(x, yN, 3.2, 0, 2 * Math.PI); g.fill();
+  }
+  g.fillStyle = "#8a93a3"; g.fillText("мэдээ", 4, yN);
+}
+
+function draw(keepRange) {
+  if (!data) return;
+  const range = keepRange ? chart.timeScale().getVisibleLogicalRange() : null;
+  candleSeries.setData(data.candles.map((c) => ({ ...c, time: shift(c.time) })));
+
+
+  Object.values(scenSeries).forEach((s) => chart.removeSeries(s));
+  bandSeries.forEach((s) => chart.removeSeries(s));
+  scenSeries = {}; bandSeries = [];
+  const maxP = Math.max(...data.scenarios.map((s) => s.prob));
+  // Магадлал багатайг эхэлж зурна (хамгийн магадлалтай нь дээр харагдана)
+  [...data.scenarios].reverse().forEach((s) => {
+    if (hidden.has(s.id)) return;
+    const ser = chart.addSeries(LWC.LineSeries, {
+      color: COLORS[s.id], lineWidth: s.rank === 0 ? 3 : 2, lineType: LWC.LineType.Curved,
+      lastValueVisible: s.rank === 0, priceLineVisible: false, crosshairMarkerVisible: false,
+      title: s.rank === 0 ? `${(100 * s.prob).toFixed(0)}%` : "",
+    });
+    ser.applyOptions({ color: hexAlpha(COLORS[s.id], 0.35 + 0.65 * s.prob / maxP) });
+    ser.setData(s.path.map((p) => ({ ...p, time: shift(p.time) })));
+    scenSeries[s.id] = ser;
+    if (s.rank === 0) {
+      for (const q of [s.q20, s.q80]) {
+        const b = chart.addSeries(LWC.LineSeries, {
+          color: hexAlpha(COLORS[s.id], 0.55), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+        });
+        b.setData(q.map((p) => ({ ...p, time: shift(p.time) })));
+        bandSeries.push(b);
+      }
+    }
+  });
+
+  // Ойрын мэдээг хамгийн магадлалтай хувилбарын шугам дээр тэмдэглэнэ (цаг нь лааны цагт бууна)
+  const top = data.scenarios.find((s) => !hidden.has(s.id));
+  if (markersApi) { markersApi.setMarkers([]); markersApi = null; }
+  if (top && scenSeries[top.id] && data.upcoming_events.length) {
+    const last = top.path[top.path.length - 1].time;
+    const lastCandle = data.candles[data.candles.length - 1].time;
+    const byHour = new Map();
+    for (const e of data.upcoming_events) {
+      const t = Math.floor(e.time / HOUR) * HOUR;
+      if (t <= lastCandle || t > last) continue;
+      if (!byHour.has(t)) byHour.set(t, []);
+      byHour.get(t).push(e);
+    }
+    const marks = [...byHour.entries()].sort((a, b) => a[0] - b[0]).map(([t, evs], j) => {
+      evs.sort((a, b) => priority(a.title) - priority(b.title));
+      const more = evs.length > 1 ? ` +${evs.length - 1}` : "";
+      const up = j % 2 === 0;   // ойрхон мэдээний шошго давхцахгүйн тулд дээр/доор ээлжилнэ
+      return { time: shift(t), position: up ? "aboveBar" : "belowBar", color: "#d6dbe3", shape: up ? "arrowDown" : "arrowUp",
+               text: `${shortTitle(evs[0].title)}${more}` };
+    });
+    if (marks.length) markersApi = LWC.createSeriesMarkers(scenSeries[top.id], marks);
+  }
+
+  if (range) chart.timeScale().setVisibleLogicalRange(range);
+  else {
+    const n = data.candles.length;
+    chart.timeScale().setVisibleLogicalRange({ from: n - 72, to: n + data.horizon + 4 });
+  }
+  requestAnimationFrame(drawStrip);
+  $("nowLabel").textContent = `Таамаглал хийсэн мөч: ${fmtTime(data.made_at)} ${tzShift ? "(УБ)" : "UTC"}`;
+}
+
+const PRIORITY = ["Non-Farm Employment Change", "FOMC Statement", "Federal Funds Rate", "CPI m/m", "Core CPI m/m",
+                  "Main Refinancing Rate", "Monetary Policy Statement", "ECB Press Conference", "Retail Sales m/m"];
+function priority(t) { const i = PRIORITY.indexOf(t); return i < 0 ? 99 : i; }
+
+function shortTitle(t) {
+  const map = { "Non-Farm Employment Change": "NFP", "FOMC Statement": "FOMC", "Federal Funds Rate": "Fed rate",
+                "Main Refinancing Rate": "ECB rate", "Monetary Policy Statement": "ECB", "ECB Press Conference": "ECB PC",
+                "CPI m/m": "CPI", "Core CPI m/m": "Core CPI", "Retail Sales m/m": "Retail Sales" };
+  return map[t] || (t.length > 14 ? t.slice(0, 13) + "…" : t);
+}
+
+function hexAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a.toFixed(2)})`;
+}
+
+function renderPanel() {
+  $("madeAt").textContent = fmtTime(data.made_at) + (tzShift ? " УБ" : " UTC");
+  $("close").textContent = data.close.toFixed(5);
+  $("atr").textContent = data.atr_pips.toFixed(1) + " пип";
+  $("model").textContent = data.model === "live_news" ? "мэдээтэй" : "мэдээгүй";
+  $("disclaimer").textContent = data.disclaimer;
+  const rg = data.range;
+  $("rangeCard").style.display = rg ? "" : "none";
+  if (rg) {
+    const d = rg.q50 / rg.typical - 1;
+    const cls = Math.abs(d) < 0.05 ? "" : d > 0 ? "up" : "down";
+    const max = Math.max(rg.q90, rg.typical) * 1.1;
+    const pct = (v) => (100 * v / max).toFixed(1);
+    $("rangeCard").innerHTML = `<div class="row"><span class="name">Медиан таамаг</span><span class="pct">${rg.q50.toFixed(0)} пип</span></div>
+      <div class="bar"><div class="fill" style="left:${pct(rg.q10)}%;width:${(pct(rg.q90) - pct(rg.q10)).toFixed(1)}%;background:#4f8cf0;opacity:.45"></div>
+        <div class="fill" style="left:${pct(rg.q50) - 0.6}%;width:1.2%;background:#4f8cf0"></div>
+        <div class="base" style="left:${pct(rg.typical)}%" title="сүүлийн сарын ердийн хүрээ"></div></div>
+      <div class="meta"><span>80% магадлалтай: ${rg.q10.toFixed(0)}–${rg.q90.toFixed(0)} пип</span>
+        <span>ердийн ${rg.typical.toFixed(0)} <span class="delta ${cls}">(${d >= 0 ? "+" : "−"}${Math.abs(100 * d).toFixed(0)}%)</span></span></div>`;
+  }
+
+  $("scenarios").innerHTML = data.scenarios.map((s) => {
+    const d = s.prob - s.base;
+    const cls = Math.abs(d) < 0.01 ? "" : d > 0 ? "up" : "down";
+    return `<div class="scen ${hidden.has(s.id) ? "off" : ""}" data-id="${s.id}">
+      <div class="row"><span class="dot" style="background:${COLORS[s.id]}"></span>
+        <span class="name">${s.name}</span><span class="pct">${(100 * s.prob).toFixed(1)}%</span></div>
+      <div class="bar"><div class="fill" style="width:${(100 * s.prob).toFixed(1)}%;background:${COLORS[s.id]}"></div>
+        <div class="base" style="left:${(100 * s.base).toFixed(1)}%" title="ердийн давтамж"></div></div>
+      <div class="meta"><span>ердийн ${(100 * s.base).toFixed(0)}% <span class="delta ${cls}">(${d >= 0 ? "+" : "−"}${Math.abs(100 * d).toFixed(1)})</span></span>
+        <span>24ц: ${fmtPips(s.end_pips)} пип (${fmtPips(s.lo_pips)}…${fmtPips(s.hi_pips)})</span></div>
+    </div>`;
+  }).join("");
+  document.querySelectorAll(".scen").forEach((el) => el.addEventListener("click", () => {
+    const id = +el.dataset.id;
+    hidden.has(id) ? hidden.delete(id) : hidden.add(id);
+    renderPanel(); draw(true);
+  }));
+
+  $("events").innerHTML = data.upcoming_events.length
+    ? data.upcoming_events.map((e) => `<div class="ev"><span class="t">${fmtTime(e.time)}</span><span>${e.currency} · ${e.title}</span></div>`).join("")
+    : `<p class="note">${data.model === "live_news" ? "Ойрын 48 цагт өндөр нөлөөтэй мэдээ алга." : "Календарь татагдаагүй (мэдээгүй загвар)."}</p>`;
+
+  const sc = data.live_score || {};
+  $("sN").textContent = sc.n_scored || 0;
+  $("sLL").textContent = sc.logloss ? `${sc.logloss.toFixed(3)} / ${sc.baseline_logloss.toFixed(3)}` : "—";
+  $("sHit").textContent = sc.top1_hit != null ? `${(100 * sc.top1_hit).toFixed(0)}%` : "—";
+}
+
+async function loadHistory() {
+  try {
+    const rows = await (await fetch("/api/history?n=30", { cache: "no-store" })).json();
+    $("hist").innerHTML = rows.map((r) => `<tr><td>${r.made_at.slice(5)}</td>
+      <td>${r.top} ${(100 * r.top_prob).toFixed(0)}%</td>
+      <td>${r.realized ?? '<span class="wait">хүлээгдэж буй</span>'}</td>
+      <td>${r.hit == null ? "" : r.hit ? '<span class="hit">✓</span>' : '<span class="miss">✗</span>'}</td></tr>`).join("")
+      || '<tr><td colspan="4" class="wait">Бүртгэл хоосон</td></tr>';
+  } catch (e) { /* түүх заавал биш */ }
+}
+
+async function load() {
+  try {
+    const r = await fetch("/api/latest", { cache: "no-store" });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const next = await r.json();
+    const changed = !data || next.made_at !== data.made_at;
+    data = next;
+    $("err").style.display = "none";
+    if (changed) { renderPanel(); draw(false); loadHistory(); }
+  } catch (e) {
+    $("err").style.display = "flex";
+    $("err").textContent = "Өгөгдөл ачаалж чадсангүй: " + e.message;
+  }
+}
+
+function tick() {
+  const now = new Date();
+  const next = new Date(now); next.setUTCMinutes(2, 0, 0);
+  if (next <= now) next.setUTCHours(next.getUTCHours() + 1);
+  const s = Math.round((next - now) / 1000);
+  $("countdown").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+$("tz").addEventListener("change", (e) => { tzShift = +e.target.value; if (data) { renderPanel(); draw(false); } });
+function fitHeader() { document.documentElement.style.setProperty('--hdr', document.querySelector('header').offsetHeight + 'px'); }
+window.addEventListener('resize', fitHeader); fitHeader();
+initChart();
+load();
+setInterval(load, 60000);
+setInterval(tick, 1000); tick();
+</script>
+</body>
+</html>

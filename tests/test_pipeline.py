@@ -31,14 +31,16 @@ def test_trading_week_follows_ny_dst():
     assert first_by_day.iloc[-1].hour == 21
 
 
-def test_histdata_est_without_dst(tmp_path):
+def test_histdata_follows_new_york_dst(tmp_path):
+    # Бодит файлуудыг Dukascopy-тай тулгахад HistData нь Нью-Йоркийн зуны цагийг дагадаг нь батлагдсан.
     f = tmp_path / "h.csv"
-    # Зуны дунд үе: EST(UTC-5) 08:00 -> 13:00 UTC (America/New_York ашиглавал 12:00 болж алдана)
-    f.write_text("20240715 080000;1.09;1.091;1.089;1.0905;0\n20240715 080100;1.0905;1.0906;1.0904;1.0905;0\n")
+    f.write_text("20240715 080000;1.09;1.091;1.089;1.0905;0\n20240715 080100;1.0905;1.0906;1.0904;1.0905;0\n"
+                 "20240115 080000;1.09;1.091;1.089;1.0905;0\n")
     m1 = prices.load_histdata_m1(f)
-    assert m1.index[0] == pd.Timestamp("2024-07-15 13:00", tz="UTC")
+    assert m1.index[0] == pd.Timestamp("2024-01-15 13:00", tz="UTC")   # өвөл: UTC-5
+    assert m1.index[1] == pd.Timestamp("2024-07-15 12:00", tz="UTC")   # зун: UTC-4
     h1 = prices.resample_to_h1(m1)
-    assert len(h1) == 1 and h1["high"].iloc[0] == 1.091
+    assert h1.loc[pd.Timestamp("2024-07-15 12:00", tz="UTC"), "high"] == 1.091
 
 
 def test_calendar_tehran_dst_change(tmp_path):
@@ -53,8 +55,39 @@ def test_calendar_tehran_dst_change(tmp_path):
     }).to_csv(f, index=False)
     ev, log = calendar.load_calendar(f, "Asia/Tehran")
     assert list(ev.ts_utc.dt.strftime("%H:%M")) == ["12:30", "12:30"]
-    assert log["time_unknown"] == 1
+    assert log["time_textual"] == 1 and log["time_unknown_dropped"] == 1
     assert ev.surprise.tolist() == [-7000.0, -16000.0]
+
+
+def _cal(tmp_path, rows):
+    f = tmp_path / "cal.csv"
+    pd.DataFrame(rows, columns=["DateTime", "Currency", "Impact", "Event", "Actual", "Forecast", "Previous"]).to_csv(f, index=False)
+    return calendar.load_calendar(f, "Asia/Tehran")
+
+
+def test_calendar_ignores_wrong_file_offset_after_iran_dst_abolished(tmp_path):
+    # 2024 онд Иранд зуны цаг байхгүй (+03:30) ч файлд +04:30 гэж бичсэн. 16:00 Тегеран = 12:30 UTC.
+    ev, log = _cal(tmp_path, [["2024-07-11T16:00:00+04:30", "USD", "High Impact Expected", "Unemployment Claims", "222K", "236K", "238K"]])
+    assert ev.ts_utc.iloc[0] == pd.Timestamp("2024-07-11 12:30", tz="UTC")
+    assert log["file_offset_disagrees_with_tzdata"] == 1
+
+
+def test_calendar_imputes_placeholder_times(tmp_path):
+    hi = "High Impact Expected"
+    ev, log = _cal(tmp_path, [
+        ["2024-04-05T00:00:00+04:30", "USD", hi, "Non-Farm Employment Change", "303K", "212K", "270K"],  # зун -> 12:30 UTC
+        ["2024-02-02T00:00:00+03:30", "USD", hi, "Non-Farm Employment Change", "353K", "187K", "333K"],  # өвөл -> 13:30 UTC
+        ["2022-06-09T00:00:00+04:30", "EUR", hi, "Main Refinancing Rate", "0.00%", "0.00%", "0.00%"],     # 13:45 CEST
+        ["2023-06-15T00:00:00+04:30", "EUR", hi, "Main Refinancing Rate", "4.00%", "4.00%", "3.75%"],     # 14:15 CEST
+        ["2024-04-05T00:00:00+04:30", "USD", hi, "FOMC Member Kugler Speaks", "", "", ""],                 # тодорхойгүй
+    ])
+    got = dict(zip(ev.title + " " + ev.ts_utc.dt.strftime("%Y"), ev.ts_utc.dt.strftime("%m-%d %H:%M")))
+    assert got["Non-Farm Employment Change 2024"] in ("04-05 12:30", "02-02 13:30")
+    assert sorted(ev.loc[ev.title == "Non-Farm Employment Change", "ts_utc"].dt.strftime("%m-%d %H:%M")) == ["02-02 13:30", "04-05 12:30"]
+    assert got["Main Refinancing Rate 2022"] == "06-09 11:45"
+    assert got["Main Refinancing Rate 2023"] == "06-15 12:15"
+    assert "FOMC Member Kugler Speaks 2024" not in got and log["time_unknown_dropped"] == 1
+    assert set(ev.time_source) == {"schedule"}
 
 
 @pytest.mark.parametrize("s,v", [("175K", 175000), ("2.4%", 2.4), ("-0.1%", -0.1), ("1.2B", 1.2e9),

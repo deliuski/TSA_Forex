@@ -29,9 +29,14 @@ def candle_event_map(candle_index: pd.DatetimeIndex, events: pd.DataFrame) -> pd
     return ev[["candle_ts", "event_id", "shifted"]].reset_index(drop=True)
 
 
-def news_features(candles: pd.DataFrame, events: pd.DataFrame, impact: str = "high") -> pd.DataFrame:
-    """Лаа бүрт (хаалтын агшинд мэдэгдэх) мэдээний шинжүүд."""
+def news_features(candles: pd.DataFrame, events: pd.DataFrame, impact: str = "high", z_clip: float = 5.0) -> pd.DataFrame:
+    """Лаа бүрт (хаалтын агшинд мэдэгдэх) мэдээний шинжүүд.
+
+    surprise_z-ийг ±z_clip-ээр хязгаарлана: 2020 оны COVID үеийн NFP/Claims z=100 хүрч,
+    загварыг (ялангуяа LSTM-ийг) гажуудуулдаг. Анхны утга нь DB-д хэвээр хадгалагдана.
+    """
     ev = events[events["impact"] == impact].sort_values("ts_utc").copy()
+    ev["surprise_z"] = ev["surprise_z"].clip(-z_clip, z_clip)
     close_t = candles.index + pd.Timedelta(hours=1)
     out = pd.DataFrame(index=candles.index)
 

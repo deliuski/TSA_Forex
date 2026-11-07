@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS econ_events (
     surprise      REAL,                    -- actual - forecast
     surprise_z    REAL,                    -- өмнөх гаргалтуудын std-д хуваасан
     raw_time_text TEXT,                    -- эх файл дахь цаг (шалгахад)
+    time_source   TEXT,                    -- original | schedule | learned_year | learned_all
     source        TEXT NOT NULL,           -- 'forexfactory'
     UNIQUE (ts_utc, currency, title)
 );
