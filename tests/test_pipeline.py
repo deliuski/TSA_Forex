@@ -163,3 +163,27 @@ def test_db_roundtrip(tmp_path):
     db.write_candle_events(con, merge.candle_event_map(c.index, ev))
     n = con.execute("SELECT COUNT(*) FROM candle_events ce JOIN econ_events e USING(event_id)").fetchone()[0]
     assert n == 2
+
+
+def test_calendar_update_infers_page_tz_and_roundtrips():
+    import pandas as pd
+    from fxdata import calendar_update as cu
+
+    # NFP (08:30 New York) ба ECB (14:15 Frankfurt) — хуудас Улаанбаатарын цагаар харуулсан гэж үзье
+    true = [("USD", "Non-Farm Employment Change", pd.Timestamp("2025-06-06 08:30", tz="America/New_York")),
+            ("USD", "Non-Farm Employment Change", pd.Timestamp("2025-12-05 08:30", tz="America/New_York")),
+            ("EUR", "Main Refinancing Rate", pd.Timestamp("2025-07-24 14:15", tz="Europe/Berlin")),
+            ("USD", "ISM Services PMI", pd.Timestamp("2026-01-07 10:00", tz="America/New_York"))]
+    page = "Asia/Ulaanbaatar"
+    new = pd.DataFrame(dict(DateTime=[t.tz_convert(page).strftime("%Y-%m-%dT%H:%M:%S") + "+00:00" for _, _, t in true],
+                            Currency=[c for c, _, _ in true], Impact="High", Event=[e for _, e, _ in true],
+                            Actual="", Forecast="", Previous=""))
+    probe = pd.DataFrame({"currency": new["Currency"], "title": new["Event"], "wall": cu._wall(new["DateTime"])})
+    inf = cu.infer_page_tz(probe)
+    assert inf["share"] == 1.0 and inf["tz"] in ("Asia/Ulaanbaatar", "Asia/Shanghai")
+    conv = cu.to_old_format(new, inf["tz"], {})
+    assert list(conv["_utc"]) == [t.tz_convert("UTC") for _, _, t in true]
+    assert conv["Impact"].eq("High Impact Expected").all()
+    # Хуучин файлын хэлбэр: Тегераны хананы цаг -> load_calendar ижил UTC буцаана
+    back = pd.to_datetime(conv["DateTime"].str[:19]).dt.tz_localize("Asia/Tehran").dt.tz_convert("UTC")
+    assert (back.to_numpy() == conv["_utc"].to_numpy()).all()

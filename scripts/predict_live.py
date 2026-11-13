@@ -37,6 +37,8 @@ from fxdata import merge, prices  # noqa: E402
 from fxmodel.features import atr, build_features  # noqa: E402
 from fxmodel.scenarios import future_paths  # noqa: E402
 from fxmodel.volatility import har_features  # noqa: E402
+from fxmodel.paths import PathLibrary  # noqa: E402
+from fxmodel.news_events import postmortem  # noqa: E402
 
 LIVE = ROOT / "data" / "live"
 MOD = ROOT / "models"
@@ -76,8 +78,77 @@ def parse_ff_json(items: list) -> pd.DataFrame:
         if pd.isna(ts):
             continue
         rows.append(dict(ts_utc=ts, currency=cur, impact=IMPACT.get(it.get("impact"), "unknown"),
-                         title=str(it.get("title", "")).strip(), surprise_z=np.nan))
-    return pd.DataFrame(rows, columns=["ts_utc", "currency", "impact", "title", "surprise_z"])
+                         title=str(it.get("title", "")).strip(), surprise_z=np.nan,
+                         actual=it.get("actual") or None, forecast=it.get("forecast") or None))
+    return pd.DataFrame(rows, columns=["ts_utc", "currency", "impact", "title", "surprise_z", "actual", "forecast"])
+
+
+def fetch_m1(days: int = 3) -> pd.DataFrame | None:
+    """Сүүлийн хэдэн өдрийн M1 (мэдээний post-mortem-д). Татагдахгүй бол None."""
+    npx = shutil.which("npx") or shutil.which("npx.cmd")
+    if not npx:
+        return None
+    now = pd.Timestamp.now(tz="UTC")
+    name = "eurusd_m1_live"
+    cmd = [npx, "-y", DUKASCOPY_NODE, "-i", "eurusd", "-from", (now - pd.Timedelta(days=days)).strftime("%Y-%m-%d"),
+           "-to", (now + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "-t", "m1", "-p", "bid", "-v", "-f", "csv",
+           "-dir", str(LIVE), "-fn", name, "--retries", "3"]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print("[анхаар] M1 татагдсангүй, post-mortem алгасна.")
+        return None
+    return prices.load_dukascopy_csv(LIVE / f"{name}.csv")
+
+
+_PROFILE = None
+
+
+def news_profile():
+    """models/news_profile.json (scripts/build_news_profile.py). Байхгүй бол ({}, {})."""
+    global _PROFILE
+    if _PROFILE is None:
+        f = MOD / "news_profile.json"
+        if f.exists():
+            d = json.loads(f.read_text(encoding="utf-8"))
+            _PROFILE = (d["profile"], {(c, t): v for c, t, v in d["effect"]})
+        else:
+            _PROFILE = ({}, {})
+    return _PROFILE
+
+
+def news_postmortem(m1: pd.DataFrame | None, events: pd.DataFrame | None, now: pd.Timestamp) -> dict:
+    """Сүүлийн 72 цагийн мэдээний post-mortem + түүхийг data/live/postmortem.csv-д хуримтлуулна."""
+    prof, eff = news_profile()
+    if events is None or m1 is None or not prof:
+        return {"items": [], "summary": {}}
+    # ForexFactory-ийн үнэгүй JSON-д "actual" байдаггүй. data/live/actuals.csv (title,date,actual) бөглөвөл
+    # чиглэлийн шинжилгээ хийгдэнэ; бөглөөгүй бол зөвхөн хэмжээний шинжилгээ.
+    ev = events.copy()
+    fa = LIVE / "actuals.csv"
+    if fa.exists():
+        a = pd.read_csv(fa, dtype=str)
+        a["day"] = pd.to_datetime(a["date"]).dt.strftime("%Y-%m-%d")
+        ev["day"] = ev["ts_utc"].dt.strftime("%Y-%m-%d")
+        ev = ev.merge(a[["title", "day", "actual"]].rename(columns={"actual": "actual_m"}), on=["title", "day"], how="left")
+        ev["actual"] = ev["actual"].where(ev["actual"].notna(), ev["actual_m"])
+    items = postmortem(m1[m1.index < now], ev, prof, eff, now)
+    path = LIVE / "postmortem.csv"
+    done = pd.DataFrame([dict(i, titles=" | ".join(i["titles"]), expected=json.dumps(i["expected"]))
+                         for i in items if i["complete"]])
+    if path.exists():
+        done = pd.concat([pd.read_csv(path), done]).drop_duplicates("time", keep="last") if len(done) else pd.read_csv(path)
+    if len(done):
+        done.sort_values("time").to_csv(path, index=False)
+    summ = {}
+    done = done[done["time"] < int(now.timestamp())] if len(done) else done
+    if len(done):
+        h = done["hit"].dropna()
+        h = h.map(lambda v: v if isinstance(v, bool) else str(v) == "True")
+        summ = dict(n=int(len(done)), n_dir=int(len(h)), hit=float(h.mean()) if len(h) else None,
+                    bigger=int((done["size"] == "хүлээгдсэнээс том").sum()),
+                    inside=int((done["size"] == "хүлээгдсэн хүрээнд").sum()),
+                    smaller=int((done["size"] == "хүлээгдсэнээс бага").sum()))
+    return {"items": items, "summary": summ}
 
 
 def fetch_calendar() -> pd.DataFrame | None:
@@ -98,6 +169,38 @@ def fetch_calendar() -> pd.DataFrame | None:
     new = new.sort_values("ts_utc")
     new.to_csv(cache, index=False)
     return new
+
+
+# ---------------- Боломжит замууд ----------------
+_LIB = None
+
+
+def path_library():
+    """Түүхэн замын сан (data/processed/eurusd_h1_with_news.parquet-аас нэг удаа үүсгэнэ)."""
+    global _LIB
+    if _LIB is None:
+        f = ROOT / "data" / "processed" / "eurusd_h1_with_news.parquet"
+        if not f.exists():
+            return None
+        hist = pd.read_parquet(f)
+        _LIB = PathLibrary(24).build(hist, hist["hours_to_next_event"])
+    return _LIB
+
+
+def possible_paths(candles: pd.DataFrame, htn: float, range_q50: float | None, n: int = 200) -> dict | None:
+    lib = path_library()
+    if lib is None:
+        return None
+    a = float(atr(candles).iloc[-1])
+    logvr = float(np.log(atr(candles).iloc[-1] / atr(candles, 100).iloc[-1]))
+    t = candles.index[-1]
+    sel = lib.select((t + pd.Timedelta(hours=1)).hour, logvr, htn, n)
+    s = lib.scale_factor(sel, a / 1e-4, range_q50)
+    c0 = float(candles["close"].iloc[-1])
+    conv = lambda m: np.round(c0 + m[sel] * a * s, 5).tolist()  # noqa: E731
+    return dict(times=[int((t + pd.Timedelta(hours=k)).timestamp()) for k in range(0, lib.h + 1)],
+                close=conv(lib.close), high=conv(lib.high), low=conv(lib.low), n=len(sel), scale=s,
+                analog_dates=[str(d)[:10] for d in lib.index[sel[:5]]])
 
 
 # ---------------- Таамаглал ----------------
@@ -128,8 +231,11 @@ def predict(candles: pd.DataFrame, events: pd.DataFrame | None, now: pd.Timestam
     prob = boosters[key].predict(x)[0]
     t = candles.index[-1]
     vol = predict_range(feats.join(har_features(candles)), "vol_news" if key == "live_news" else "vol_nonews")
+    htn = float(feats["hours_to_next_event"].iloc[-1]) if "hours_to_next_event" in feats else float("nan")
+    paths = possible_paths(candles, htn, vol["q50"] if vol else None)
     return dict(made_at=t + pd.Timedelta(hours=1), candle_ts=t, close=float(candles["close"].iloc[-1]),
-                atr=float(atr(candles).iloc[-1]), model=key, prob=prob, sm=sm, meta=meta, candles=candles, vol=vol)
+                atr=float(atr(candles).iloc[-1]), model=key, prob=prob, sm=sm, meta=meta, candles=candles, vol=vol,
+                paths=paths)
 
 
 def predict_range(feats: pd.DataFrame, key: str) -> dict | None:
@@ -228,12 +334,19 @@ def write_json(res: dict, events: pd.DataFrame | None, score: dict, path: Path, 
         news_zone = sorted({unix(t.floor("h")) for t in zone["ts_utc"]})
         e = events[(events["ts_utc"] >= res["made_at"]) & (events["ts_utc"] <= res["made_at"] + pd.Timedelta(hours=48))
                    & (events["impact"] == "high")]
-        upcoming = [dict(time=unix(r.ts_utc), currency=r.currency, title=r.title) for r in e.itertuples()]
+        prof, _ = news_profile()
+        glob = prof.get("_global", {})
+        upcoming = []
+        for r in e.itertuples():
+            p = prof.get(r.title)
+            upcoming.append(dict(time=unix(r.ts_utc), currency=r.currency, title=r.title, known=p is not None,
+                                 r60_med=(p or glob).get("r60_med"), r60_q90=(p or glob).get("r60_q90"),
+                                 mult=(p or glob).get("mult"), hit5=(p or glob).get("hit5"), n=(p or {}).get("n", 0)))
     out = dict(
         made_at=unix(res["made_at"]), made_at_text=f"{res['made_at']:%Y-%m-%d %H:%M} UTC",
         close=res["close"], atr_pips=pip, model=res["model"], horizon=len(sm.centroids[0]),
         candles=[dict(time=unix(t), open=r.open, high=r.high, low=r.low, close=r.close) for t, r in zip(c.index, c.itertuples())],
-        scenarios=scen, upcoming_events=upcoming, live_score=score, news_hours=news_zone, range=res.get("vol"),
+        scenarios=scen, upcoming_events=upcoming, live_score=score, postmortem=res.get("postmortem"), news_hours=news_zone, range=res.get("vol"), paths=res.get("paths"),
         sessions=session_hours(c.index[0], t0 + pd.Timedelta(hours=len(sm.centroids[0]))),
         disclaimer="Судалгааны прототип. Санхүүгийн зөвлөгөө биш. Чиглэлийн AUC ≈ 0.50.",
     )
@@ -303,6 +416,13 @@ def run_once(args):
         events = fetch_calendar()
     res = predict(candles, events, now)
     LIVE.mkdir(parents=True, exist_ok=True)
+    m1 = prices.load_dukascopy_csv(args.m1_csv) if args.m1_csv else (None if args.candles_csv else fetch_m1())
+    res["postmortem"] = news_postmortem(m1, events, now)
+    for it in res["postmortem"]["items"][:5]:
+        dirtxt = {True: "таарсан", False: "таараагүй", None: "—"}[it["hit"]]
+        print(f"  [мэдээ] {pd.Timestamp(it['time'], unit='s'):%m-%d %H:%M} {', '.join(it['titles'])[:60]}: "
+              f"60м хүрээ {it['R60']:.0f} пип ({it['size']}), эхний 5м {it['J']:+.1f} пип, чиглэл {dirtxt}"
+              + (f" — {it['reason']}" if it["reason"] else ""))
     log_prediction(res)
     score = score_past(res["candles"], res["sm"], res["meta"]["horizon"])
     plot(res, LIVE / "latest.png")
@@ -329,6 +449,7 @@ def main():
     ap.add_argument("--no-news", action="store_true", help="Календарь татахгүй, мэдээгүй загвар ашиглана")
     ap.add_argument("--candles-csv", help="Офлайн тест: dukascopy CSV")
     ap.add_argument("--calendar-json", help="Офлайн тест: ForexFactory JSON")
+    ap.add_argument("--m1-csv", help="Офлайн тест: dukascopy-node M1 CSV (мэдээний post-mortem)")
     ap.add_argument("--now", help="Офлайн тест: 'одоо'-гийн UTC цаг")
     args = ap.parse_args()
     if not args.loop:

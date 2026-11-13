@@ -31,7 +31,7 @@ from fxmodel.features import NEWS_SCHEDULE_COLS, build_features, group_columns  
 from fxmodel.volatility import future_range, har_features, pinball, past_range  # noqa: E402
 
 H = 24
-TRAIN_END, VALID_END = pd.Timestamp("2022-01-01", tz="UTC"), pd.Timestamp("2023-01-01", tz="UTC")
+from fxmodel.splits import TEST_END, TRAIN_END, VALID_END  # noqa: E402
 REP, MOD = ROOT / "reports", ROOT / "models"
 QS = (0.1, 0.5, 0.9)
 PARAMS = dict(objective="quantile", learning_rate=0.03, num_leaves=31, min_data_in_leaf=300,
@@ -78,7 +78,7 @@ def main():
     purge = pd.Timedelta(hours=H)
     tr = ok & (idx < TRAIN_END - purge)
     va = ok & (idx >= TRAIN_END) & (idx < VALID_END - purge)
-    te = ok & (idx >= VALID_END)
+    te = ok & (idx >= VALID_END) & (idx < TEST_END - purge)
     yte = y[te].to_numpy()
     weeks = idx[te].tz_localize(None).to_period("W").astype(str)
 

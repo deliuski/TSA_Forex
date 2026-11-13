@@ -1,0 +1,124 @@
+{
+ "start": "2025-04-08 00:00:00+00:00",
+ "dry_run_on_test_period": false,
+ "scenario_model": {
+  "n": 7855,
+  "period": [
+   "2025-04-08 00:00:00+00:00",
+   "2026-11-05 21:00:00+00:00"
+  ],
+  "logloss": 1.4694,
+  "baseline_logloss": 1.4884,
+  "gain_pct": 1.28,
+  "gain_ci95_pct": [
+   0.53,
+   2.02
+  ],
+  "direction_auc": 0.462,
+  "magnitude_auc": 0.604,
+  "realized_freq": {
+   "Хажуу тийш (range)": 0.327,
+   "Тогтвортой өсөлт": 0.23,
+   "Тогтвортой уналт": 0.265,
+   "Эхлээд унаад буцаж өснө": 0.089,
+   "Эхлээд өсөөд буцаж унана": 0.088
+  },
+  "test_reference": {
+   "gain_pct": 1.55,
+   "direction_auc": 0.503,
+   "magnitude_auc": 0.628
+  }
+ },
+ "range_model_24h": {
+  "n": 7855,
+  "median_range_pips": 61.7,
+  "r2_lgbm": 0.322,
+  "r2_har": 0.26,
+  "mae_pips_lgbm": 21.2,
+  "mae_pips_har": 21.9,
+  "mae_gain_vs_har_ci95": [
+   0.0004,
+   0.0241
+  ],
+  "coverage80_lgbm": 0.778,
+  "coverage80_har": 0.771,
+  "test_reference": {
+   "r2_lgbm": 0.222,
+   "r2_har": 0.108,
+   "coverage80": 0.801
+  }
+ },
+ "news": {
+  "n_events": 305,
+  "period": [
+   "2025-04-09 18:00:00+00:00",
+   "2026-11-06 13:30:00+00:00"
+  ],
+  "r60_median_pips": 28.3,
+  "r2_seasonal_only": -1.11,
+  "r2_seasonal_plus_type": 0.158,
+  "mae_pips_type": 13.0,
+  "coverage80": 0.741,
+  "surprise_to_first5m": {
+   "all": {
+    "n": 99,
+    "rate": 76.8,
+    "ci95": [
+     67.5,
+     84.0
+    ]
+   },
+   "no_conflict": {
+    "n": 91,
+    "rate": 78.0,
+    "ci95": [
+     68.5,
+     85.3
+    ]
+   },
+   "test_reference_pct": 72.9
+  },
+  "by_type_n>=5": {
+   "ISM Services PMI": {
+    "rate": 100.0,
+    "n": 6
+   },
+   "German Flash Manufacturing PMI": {
+    "rate": 100.0,
+    "n": 6
+   },
+   "JOLTS Job Openings": {
+    "rate": 87.5,
+    "n": 8
+   },
+   "German Flash Services PMI": {
+    "rate": 83.3,
+    "n": 6
+   },
+   "Core CPI m/m": {
+    "rate": 81.8,
+    "n": 11
+   },
+   "Core PPI m/m": {
+    "rate": 80.0,
+    "n": 10
+   },
+   "Flash Manufacturing PMI": {
+    "rate": 71.4,
+    "n": 7
+   },
+   "PPI m/m": {
+    "rate": 66.7,
+    "n": 6
+   },
+   "Prelim UoM Consumer Sentiment": {
+    "rate": 66.7,
+    "n": 6
+   },
+   "Final GDP q/q": {
+    "rate": 20.0,
+    "n": 5
+   }
+  }
+ }
+}

@@ -1,0 +1,134 @@
+{
+  "n_events": {
+    "train": 1813,
+    "valid": 204,
+    "test": 518
+  },
+  "1_reaction_size": {
+    "B0 улирал": {
+      "mae_log": 0.6205893174571984,
+      "r2": -0.6710896534782125,
+      "mae_pips": 17.395013444355858,
+      "vs_B1_ci95": [
+        -0.20938203255638724,
+        -0.1324555629196221
+      ]
+    },
+    "B1 HAR": {
+      "mae_log": 0.4498284576296088,
+      "r2": 0.10207730108969681,
+      "mae_pips": 14.250270197678727
+    },
+    "B2 HAR+төрөл": {
+      "mae_log": 0.41117392543285686,
+      "r2": 0.2691566685782083,
+      "mae_pips": 13.281048314565234,
+      "vs_B1_ci95": [
+        0.011215857142988252,
+        0.06605212263413145
+      ]
+    },
+    "LGBM": {
+      "mae_log": 0.4024280971610253,
+      "r2": 0.2909343017885886,
+      "mae_pips": 12.79691757812065,
+      "vs_B1_ci95": [
+        0.016418147570011036,
+        0.07720093622898715
+      ],
+      "coverage80": 0.7413127413127413
+    },
+    "test_median_R60_pips": 28.749999999999602,
+    "type_effect_top": {
+      "FOMC Economic Projections": 5.47,
+      "FOMC Statement": 5.01,
+      "Federal Funds Rate": 4.97,
+      "FOMC Press Conference": 4.12,
+      "ECB Press Conference": 2.92,
+      "Main Refinancing Rate": 2.86,
+      "Monetary Policy Statement": 2.66,
+      "Non-Farm Employment Change": 2.49,
+      "Unemployment Rate": 2.49,
+      "Average Hourly Earnings m/m": 2.49
+    },
+    "type_effect_bottom": {
+      "Prelim UoM Consumer Sentiment": 1.18,
+      "ADP Non-Farm Employment Change": 1.16,
+      "Building Permits": 1.13,
+      "CB Consumer Confidence": 1.12,
+      "Crude Oil Inventories": 1.04
+    }
+  },
+  "2_surprise_to_jump": {
+    "бүгд": {
+      "n": 1040,
+      "hit_rate": 0.6951923076923077,
+      "p": 4.264815771709439e-37,
+      "corr_J_S": 0.3553745780286574
+    },
+    "train": {
+      "n": 738,
+      "hit_rate": 0.6883468834688347,
+      "p": 5.630934364843202e-25,
+      "corr_J_S": 0.29046883033749193
+    },
+    "test": {
+      "n": 210,
+      "hit_rate": 0.7285714285714285,
+      "p": 2.491810255689349e-11,
+      "corr_J_S": 0.4855436591124392
+    },
+    "|S|>=1.5": {
+      "n": 245,
+      "hit_rate": 0.6979591836734694,
+      "median_abs_J_pips": 7.500000000000284
+    }
+  },
+  "3_post_release_60m": {
+    "n_test": 513,
+    "train_continuation_rate": 0.47356705620478573,
+    "test_continuation_rate": 0.5087719298245614,
+    "lgbm_auc": 0.48972634014185257,
+    "lgbm_best_iter": 8,
+    "үргэлжлүүлэх (J-ийн дагуу)": {
+      "trades": 513,
+      "hit": 0.5087719298245614,
+      "avg_pips": -2.3423001949318003,
+      "total_pips": -1201.6000000000136,
+      "avg_pips_ci95": [
+        -3.9687251963271732,
+        -0.683978142434361
+      ]
+    },
+    "эсрэг (J-ийн эсрэг)": {
+      "trades": 513,
+      "hit": 0.49122807017543857,
+      "avg_pips": -1.6576998050681997,
+      "total_pips": -850.3999999999864,
+      "avg_pips_ci95": [
+        -3.316021857565639,
+        -0.03127480367282692
+      ]
+    },
+    "surprise-ийг дагах": {
+      "trades": 376,
+      "hit": 0.5053191489361702,
+      "avg_pips": -1.6981382978723234,
+      "total_pips": -638.4999999999936,
+      "avg_pips_ci95": [
+        -3.833959999999966,
+        0.25121527777775754
+      ]
+    },
+    "LightGBM": {
+      "trades": 513,
+      "hit": 0.48148148148148145,
+      "avg_pips": -2.523586744639378,
+      "total_pips": -1294.600000000001,
+      "avg_pips_ci95": [
+        -4.428310405455449,
+        -0.4179042658729894
+      ]
+    }
+  }
+}

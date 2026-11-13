@@ -85,3 +85,75 @@ def test_future_range_matches_manual():
     p = past_range(df, 24)
     w = df.iloc[i - 23:i + 1]
     assert abs(p.iloc[i] - (w.high.max() - w.low.min()) / 1e-4) < 1e-6
+
+
+def test_intraday_htf_and_news_no_lookahead():
+    from fxmodel.intraday import htf_context, news_minutes, future_range_bars
+    idx = pd.date_range("2024-03-04 00:00", periods=12 * 24 * 12, freq="5min", tz="UTC")
+    idx = idx[idx.dayofweek < 5]
+    rng = np.random.default_rng(7)
+    c = 1.08 + np.cumsum(rng.normal(0, 2e-4, len(idx)))
+    o = np.r_[c[0], c[:-1]]
+    m5 = pd.DataFrame({"open": o, "high": np.maximum(o, c) + 1e-4, "low": np.minimum(o, c) - 1e-4,
+                       "close": c, "n_m1": 5}, index=idx)
+    full = htf_context(m5)
+    cut = 1500
+    part = htf_context(m5.iloc[:cut])
+    a, b = full.iloc[cut - 30:cut], part.iloc[-30:]
+    assert (((a - b).abs() < 1e-9) | (a.isna() & b.isna())).all().all()
+    # H1 10:00 лаа 11:00-д хаагдана: 10:50 M5 (хаалт 10:55) нь 09:00 H1-ийг харна, 10:55 M5 (хаалт 11:00) 10:00-ийг харна
+    ev = pd.DataFrame({"ts_utc": [pd.Timestamp("2024-03-05 12:30", tz="UTC")], "impact": ["high"], "surprise_z": [2.0]})
+    nm = news_minutes(m5, ev)
+    assert nm.loc[pd.Timestamp("2024-03-05 12:25", tz="UTC"), "min_to_next_event"] == 0      # хаалт 12:30 = мэдээ
+    assert np.isnan(nm.loc[pd.Timestamp("2024-03-05 12:25", tz="UTC"), "last_surprise_z_abs"])
+    assert nm.loc[pd.Timestamp("2024-03-05 12:30", tz="UTC"), "last_surprise_z_abs"] == 2.0
+    r = future_range_bars(m5, 12)
+    assert r.isna().sum() > 0 and r.notna().sum() > 0
+
+
+def test_barrier_probs_and_library():
+    from fxmodel.paths import PathLibrary, barrier_probs
+    hi = np.array([[1, 5, 9], [1, 2, 3], [12, 1, 1], [1, 1, 1]], float)
+    lo = np.array([[-1, -1, -1], [-11, -1, -1], [-1, -1, -1], [-10, -1, -1]], float)
+    # зам 0: дээд (k=2), зам 1: доод, зам 2: дээд, зам 3: доод (k=0, high 1 < 8)
+    p = barrier_probs(hi, lo, up=8, down=10)
+    assert abs(p["up"] - 0.5) < 1e-9 and abs(p["down"] - 0.5) < 1e-9 and abs(p["none"]) < 1e-9
+    df = synth(seed=9)
+    lib = PathLibrary(24).build(df)
+    assert lib.close.shape[1] == 24 and len(lib.index) > 100
+    sel = lib.select(hour=10, logvr=0.0, htn=float("nan"), n=50)
+    assert len(sel) == 50
+    s = lib.scale_factor(sel, atr_pips=10.0, range_q50_pips=float(np.median(lib.range_atr[sel]) * 10.0))
+    assert abs(s - 1.0) < 1e-9
+
+
+def test_news_postmortem_categories_and_no_lookahead():
+    import numpy as np
+    import pandas as pd
+    from fxmodel.news_events import parse_value, postmortem, surprise_sign
+
+    assert parse_value("228K") == 228000 and parse_value("<0.10%") == 0.10 and parse_value("-1.2B") == -1.2e9
+    assert np.isnan(parse_value("")) and np.isnan(parse_value(None))
+    eff = {("USD", "NFP"): 1, ("USD", "UR"): -1, ("EUR", "CPI"): 1}
+    assert surprise_sign("USD", "NFP", "228K", "137K", eff) == -1      # сайн USD -> EUR/USD доош
+    assert surprise_sign("EUR", "CPI", "0.5%", "0.3%", eff) == 1
+    assert np.isnan(surprise_sign("USD", "NFP", None, "137K", eff))
+
+    t0 = pd.Timestamp("2025-04-04 12:30", tz="UTC")
+    idx = pd.date_range(t0 - pd.Timedelta(hours=1), t0 + pd.Timedelta(hours=2), freq="1min")
+    px = np.full(len(idx), 1.1000)
+    k = idx.get_loc(t0)
+    px[k + 1:] = 1.0970                                                  # мэдээний дараа 30 пип доош
+    m1 = pd.DataFrame({"open": px, "high": px + 1e-5, "low": px - 1e-5, "close": px}, index=idx)
+    prof = {"NFP": dict(r60_q10=10, r60_med=20, r60_q90=25, hit5=0.77), "UR": dict(r60_q10=10, r60_med=20, r60_q90=25, hit5=0.5),
+            "_global": dict(r60_q10=5, r60_med=10, r60_q90=20, hit5=0.7)}
+    ev = pd.DataFrame(dict(ts_utc=[t0], currency=["USD"], impact=["high"], title=["NFP"], actual=["228K"], forecast=["137K"]))
+    it = postmortem(m1, ev, prof, eff, t0 + pd.Timedelta(hours=2))[0]
+    assert it["hit"] is True and it["size"] == "хүлээгдсэнээс том" and it["J"] < -25
+    # Зөрчилтэй surprise: NFP сайн (доош), UR муу (дээш)
+    ev2 = pd.concat([ev, ev.assign(title="UR", actual="4.2%", forecast="4.1%")])
+    it2 = postmortem(m1, ev2, prof, eff, t0 + pd.Timedelta(hours=2))[0]
+    assert it2["hit"] is None and it2["reason"].startswith("зөрчилтэй")
+    # Ирээдүйн өгөгдөл ашиглахгүй: "одоо" = мэдээнээс 20 минутын дараа -> дуусаагүй гэж тэмдэглэнэ
+    it3 = postmortem(m1[m1.index < t0 + pd.Timedelta(minutes=20)], ev, prof, eff, t0 + pd.Timedelta(minutes=20))[0]
+    assert it3["complete"] is False

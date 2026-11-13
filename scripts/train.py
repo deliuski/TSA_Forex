@@ -34,7 +34,7 @@ from fxmodel.features import NEWS_SCHEDULE_COLS, build_features, group_columns  
 from fxmodel.scenarios import ScenarioModel, future_paths  # noqa: E402
 
 H = 24
-TRAIN_END, VALID_END = pd.Timestamp("2022-01-01", tz="UTC"), pd.Timestamp("2023-01-01", tz="UTC")
+from fxmodel.splits import TEST_END, TRAIN_END, VALID_END  # noqa: E402
 PARAMS = dict(objective="multiclass", learning_rate=0.03, num_leaves=31,
               min_data_in_leaf=300, feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1,
               lambda_l2=5.0, verbose=-1, seed=0, num_threads=2)
@@ -87,7 +87,7 @@ def main():
     idx = df.index
     tr = ok & (idx < TRAIN_END - purge)
     va = ok & (idx >= TRAIN_END) & (idx < VALID_END - purge)
-    te = ok & (idx >= VALID_END)
+    te = ok & (idx >= VALID_END) & (idx < TEST_END - purge)
 
     sm = ScenarioModel().fit(paths[tr])
     K = sm.k

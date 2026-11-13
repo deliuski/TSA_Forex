@@ -1,0 +1,88 @@
+{
+ "start": "2024-10-01 00:00:00+00:00",
+ "dry_run_on_test_period": true,
+ "scenario_model": {
+  "n": 2479,
+  "period": [
+   "2024-10-01 00:00:00+00:00",
+   "2025-04-03 20:00:00+00:00"
+  ],
+  "logloss": 1.403,
+  "baseline_logloss": 1.5003,
+  "gain_pct": 6.49,
+  "gain_ci95_pct": [
+   5.31,
+   7.7
+  ],
+  "direction_auc": 0.57,
+  "magnitude_auc": 0.705,
+  "realized_freq": {
+   "Хажуу тийш (range)": 0.309,
+   "Тогтвортой өсөлт": 0.236,
+   "Тогтвортой уналт": 0.269,
+   "Эхлээд унаад буцаж өснө": 0.104,
+   "Эхлээд өсөөд буцаж унана": 0.081
+  },
+  "test_reference": {
+   "gain_pct": 1.55,
+   "direction_auc": 0.503,
+   "magnitude_auc": 0.628
+  }
+ },
+ "range_model_24h": {
+  "n": 2479,
+  "median_range_pips": 69.3,
+  "r2_lgbm": 0.267,
+  "r2_har": 0.071,
+  "mae_pips_lgbm": 22.9,
+  "mae_pips_har": 26.4,
+  "mae_gain_vs_har_ci95": [
+   0.0326,
+   0.0619
+  ],
+  "coverage80_lgbm": 0.794,
+  "coverage80_har": 0.774,
+  "test_reference": {
+   "r2_lgbm": 0.222,
+   "r2_har": 0.108,
+   "coverage80": 0.801
+  }
+ },
+ "news": {
+  "n_events": 142,
+  "period": [
+   "2024-10-01 09:00:00+00:00",
+   "2025-04-04 15:25:00+00:00"
+  ],
+  "r60_median_pips": 28.4,
+  "r2_seasonal_only": -0.466,
+  "r2_seasonal_plus_type": 0.224,
+  "mae_pips_type": 15.0,
+  "coverage80": 0.718,
+  "surprise_to_first5m": {
+   "all": {
+    "n": 44,
+    "rate": 70.5,
+    "ci95": [
+     55.8,
+     81.8
+    ]
+   },
+   "no_conflict": {
+    "n": 39,
+    "rate": 69.2,
+    "ci95": [
+     53.6,
+     81.4
+    ]
+   },
+   "test_reference_pct": 72.9
+  },
+  "by_type_n>=5": {
+   "ISM Services PMI": {
+    "rate": 80.0,
+    "n": 5
+   }
+  }
+ }
+}

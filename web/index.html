@@ -41,6 +41,14 @@
   .hit { color: #8fd18f; } .miss { color: #e79a95; } .wait { color: var(--muted); }
   .ev { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
   .ev .t { color: var(--muted); width: 92px; flex: none; font-variant-numeric: tabular-nums; }
+  .ev .x { margin-left: auto; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ev .x b { color: var(--text); font-weight: 600; }
+  .alert { border: 1px solid #6b4f1d; background: rgba(240,170,60,.08); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; }
+  .pm { border-bottom: 1px solid var(--line); padding: 6px 0; font-size: 12px; }
+  .pm .h { display: flex; gap: 8px; } .pm .h .t { color: var(--muted); width: 92px; flex: none; }
+  .pm .d { color: var(--muted); margin: 2px 0 0 100px; }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; background: #222833; margin-right: 4px; }
+  .tag.big { background: rgba(231,154,149,.18); color: #e79a95; } .tag.small { background: rgba(143,209,143,.15); color: #8fd18f; }
   .score { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
   .score div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; }
   .score small { display: block; color: var(--muted); font-size: 11px; }
@@ -65,11 +73,20 @@
   <span class="kv">Дараагийн шинэчлэлт: <b id="countdown">—</b></span>
   <span class="spacer"></span>
   <span style="display:inline-flex;gap:14px;align-items:center;white-space:nowrap">
+  <label class="kv">Харагдац: <select id="view"><option value="paths">Боломжит замууд</option><option value="scen">5 хувилбар</option></select></label>
   <label class="kv">Цаг: <select id="tz"><option value="0">UTC</option><option value="8">Улаанбаатар (UTC+8)</option></select></label></span>
 </header>
 <main>
   <div id="chart"><canvas id="strip"></canvas><div class="now-label" id="nowLabel"></div><div id="err"></div></div>
   <aside>
+    <h2>Боломжит замууд — аль түвшинд эхэлж хүрэх вэ</h2>
+    <div class="scen" id="pathCard" style="cursor:default">
+      <div class="row"><span class="name">Түвшин: одоогийн үнээс ±<b id="lvlTxt">—</b> пип</span></div>
+      <input type="range" id="lvl" min="5" max="200" step="5" value="30" style="width:100%;margin:8px 0 4px">
+      <div id="pathProbs"></div>
+      <p class="note" id="pathNote"></p>
+    </div>
+
     <h2>Ирэх 24 цагийн хүрээ (high − low)</h2>
     <div class="scen" id="rangeCard" style="cursor:default"></div>
 
@@ -80,7 +97,13 @@
     <p class="note">Чартын дээд туузанд Токио, Лондон, Нью-Йорк сессийн цаг (хот бүрийн 08–17 цаг, зуны цагийг тооцсон), улаан цэг нь өндөр нөлөөтэй мэдээ. EUR/USD-ийн хамгийн их хөдөлгөөн Лондон ба Нью-Йоркийн давхцлын үед болдог.</p>
 
     <h2>Ойрын 48 цагийн өндөр нөлөөтэй мэдээ</h2>
+    <div id="newsAlert"></div>
     <div id="events"></div>
+    <p class="note">Пип = мэдээнээс хойших 60 минутын хүрээний түүхэн медиан (90%: дээд хязгаар); × = тухайн цагийн ердийн хүрээнээс хэд дахин том (2015–2025). Мэдээний чиглэлийг урьдчилан хэлэх боломжгүй: давуу тал эхний 1 минутад алга болдог.</p>
+
+    <h2>Өнгөрсөн мэдээний шинжилгээ (post-mortem)</h2>
+    <div id="pmSummary" class="note"></div>
+    <div id="postmortem"></div>
 
     <h2>Бодит цагийн үнэлгээ</h2>
     <div class="score">
@@ -107,7 +130,10 @@ const HOUR = 3600;
 let chart, candleSeries, scenSeries = {}, bandSeries = [], markersApi = null;
 const LANES = [["tokyo", "Токио", "#7c6bc4"], ["london", "Лондон", "#3f7fd9"], ["newyork", "Нью-Йорк", "#c98a2e"]];
 const STRIP_H = 58;
-let data = null, hidden = new Set(), tzShift = 0;
+let data = null, hidden = new Set(), tzShift = 0, view = "paths", level = null;
+let pathSeries = [], levelSeries = [];
+const PATH_COL = ["#3fb27f", "#e5534b", "#8a93a3"];   // дээд, доод, хүрээгүй
+const N_DRAW = 40;
 
 const $ = (id) => document.getElementById(id);
 const fmtPips = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(0);
@@ -199,7 +225,12 @@ function draw(keepRange) {
 
   Object.values(scenSeries).forEach((s) => chart.removeSeries(s));
   bandSeries.forEach((s) => chart.removeSeries(s));
-  scenSeries = {}; bandSeries = [];
+  pathSeries.forEach((s) => chart.removeSeries(s));
+  levelSeries.forEach((s) => chart.removeSeries(s));
+  scenSeries = {}; bandSeries = []; pathSeries = []; levelSeries = [];
+  let markerHost = null;
+  if (view === "paths" && data.paths) { markerHost = drawPaths(); }
+  else {
   const maxP = Math.max(...data.scenarios.map((s) => s.prob));
   // Магадлал багатайг эхэлж зурна (хамгийн магадлалтай нь дээр харагдана)
   [...data.scenarios].reverse().forEach((s) => {
@@ -224,10 +255,13 @@ function draw(keepRange) {
     }
   });
 
-  // Ойрын мэдээг хамгийн магадлалтай хувилбарын шугам дээр тэмдэглэнэ (цаг нь лааны цагт бууна)
-  const top = data.scenarios.find((s) => !hidden.has(s.id));
+  const top0 = data.scenarios.find((s) => !hidden.has(s.id));
+  if (top0) markerHost = scenSeries[top0.id];
+  }
+  // Ойрын мэдээг ирээдүйн шугам дээр тэмдэглэнэ (цаг нь лааны цагт бууна)
+  const top = data.scenarios[0];
   if (markersApi) { markersApi.setMarkers([]); markersApi = null; }
-  if (top && scenSeries[top.id] && data.upcoming_events.length) {
+  if (markerHost && data.upcoming_events.length) {
     const last = top.path[top.path.length - 1].time;
     const lastCandle = data.candles[data.candles.length - 1].time;
     const byHour = new Map();
@@ -244,13 +278,13 @@ function draw(keepRange) {
       return { time: shift(t), position: up ? "aboveBar" : "belowBar", color: "#d6dbe3", shape: up ? "arrowDown" : "arrowUp",
                text: `${shortTitle(evs[0].title)}${more}` };
     });
-    if (marks.length) markersApi = LWC.createSeriesMarkers(scenSeries[top.id], marks);
+    if (marks.length) markersApi = LWC.createSeriesMarkers(markerHost, marks);
   }
 
   if (range) chart.timeScale().setVisibleLogicalRange(range);
   else {
     const n = data.candles.length;
-    chart.timeScale().setVisibleLogicalRange({ from: n - 72, to: n + data.horizon + 4 });
+    chart.timeScale().setVisibleLogicalRange({ from: n - (view === "paths" ? 40 : 72), to: n + data.horizon + 4 });
   }
   requestAnimationFrame(drawStrip);
   $("nowLabel").textContent = `Таамаглал хийсэн мөч: ${fmtTime(data.made_at)} ${tzShift ? "(УБ)" : "UTC"}`;
@@ -259,6 +293,61 @@ function draw(keepRange) {
 const PRIORITY = ["Non-Farm Employment Change", "FOMC Statement", "Federal Funds Rate", "CPI m/m", "Core CPI m/m",
                   "Main Refinancing Rate", "Monetary Policy Statement", "ECB Press Conference", "Retail Sales m/m"];
 function priority(t) { const i = PRIORITY.indexOf(t); return i < 0 ? 99 : i; }
+
+// Зам бүр аль түвшинд эхэлж хүрснийг тооцно: 0 дээд, 1 доод, 2 хүрээгүй (нэг цагт хоёулаа бол 0.5/0.5)
+function outcomes(L) {
+  const P = data.paths, c0 = data.close, up = c0 + L * 1e-4, dn = c0 - L * 1e-4;
+  const res = [], cnt = [0, 0, 0];
+  for (let i = 0; i < P.high.length; i++) {
+    let o = 2;
+    for (let k = 0; k < P.high[i].length; k++) {
+      const hu = P.high[i][k] >= up, hd = P.low[i][k] <= dn;
+      if (hu && hd) { o = i % 2; break; }
+      if (hu) { o = 0; break; }
+      if (hd) { o = 1; break; }
+    }
+    res.push(o); cnt[o]++;
+  }
+  const n = P.high.length;
+  return { res, p: cnt.map((c) => c / n) };
+}
+
+function drawPaths() {
+  const P = data.paths, t = P.times;
+  const { res, p } = outcomes(level);
+  const step = Math.max(1, Math.floor(P.close.length / N_DRAW));
+  for (let i = 0; i < P.close.length && pathSeries.length < N_DRAW; i += step) {
+    const ser = chart.addSeries(LWC.LineSeries, {
+      color: hexAlpha(PATH_COL[res[i]], 0.55), lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    ser.setData([{ time: shift(t[0]), value: data.close }, ...P.close[i].map((v, k) => ({ time: shift(t[k + 1]), value: v }))]);
+    pathSeries.push(ser);
+  }
+  const mk = (price, color, label) => {
+    const s = chart.addSeries(LWC.LineSeries, { color, lineWidth: 2, lastValueVisible: true, priceLineVisible: false,
+      crosshairMarkerVisible: false, title: label });
+    s.setData(t.map((x) => ({ time: shift(x), value: +price.toFixed(5) })));
+    levelSeries.push(s);
+    return s;
+  };
+  const hostUp = mk(data.close + level * 1e-4, "#3fb27f", `${(100 * p[0]).toFixed(0)}%`);
+  mk(data.close - level * 1e-4, "#e5534b", `${(100 * p[1]).toFixed(0)}%`);
+  renderPathCard(p);
+  return hostUp;
+}
+
+function renderPathCard(p) {
+  const rows = [["Дээд түвшинд эхэлж хүрнэ", p[0], PATH_COL[0]], ["Доод түвшинд эхэлж хүрнэ", p[1], PATH_COL[1]],
+                ["24 цагт аль алинд нь хүрэхгүй", p[2], PATH_COL[2]]];
+  $("pathProbs").innerHTML = rows.map(([n, v, c]) => `<div class="row" style="margin-top:6px"><span class="dot" style="background:${c}"></span>
+    <span class="name">${n}</span><span class="pct" style="font-size:15px">${(100 * v).toFixed(0)}%</span></div>
+    <div class="bar"><div class="fill" style="width:${(100 * v).toFixed(1)}%;background:${c}"></div></div>`).join("");
+  $("lvlTxt").textContent = level;
+  $("pathNote").textContent = `Өдрийн ижил цаг, мэдээ, хэлбэлзлийн нөхцөлтэй түүхэн ${data.paths.n} тохиолдлын бодит 24 цагийн замууд` +
+    ` (одоогийн хэлбэлзлийн таамагт масштабласан, ×${data.paths.scale.toFixed(2)}). Чиглэл нь түүхэн тохиолдлуудаас ирдэг бөгөөд` +
+    ` test дээр чиглэлийн таарц ~50% байсан тул ногоон/улааны зөрүүг дохио гэж үзэхгүй, харин "хүрэхгүй" магадлал (хэлбэлзэл) найдвартай.`;
+}
 
 function shortTitle(t) {
   const map = { "Non-Farm Employment Change": "NFP", "FOMC Statement": "FOMC", "Federal Funds Rate": "Fed rate",
@@ -278,6 +367,12 @@ function renderPanel() {
   $("atr").textContent = data.atr_pips.toFixed(1) + " пип";
   $("model").textContent = data.model === "live_news" ? "мэдээтэй" : "мэдээгүй";
   $("disclaimer").textContent = data.disclaimer;
+  $("pathCard").style.display = data.paths ? "" : "none";
+  if (data.paths && level == null) {
+    const base = data.range ? data.range.q50 / 2 : 3 * data.atr_pips;
+    level = Math.max(5, Math.round(base / 5) * 5);
+    $("lvl").value = level;
+  }
   const rg = data.range;
   $("rangeCard").style.display = rg ? "" : "none";
   if (rg) {
@@ -311,9 +406,28 @@ function renderPanel() {
     renderPanel(); draw(true);
   }));
 
-  $("events").innerHTML = data.upcoming_events.length
-    ? data.upcoming_events.map((e) => `<div class="ev"><span class="t">${fmtTime(e.time)}</span><span>${e.currency} · ${e.title}</span></div>`).join("")
+  const ups = data.upcoming_events || [];
+  $("events").innerHTML = ups.length
+    ? ups.map((e) => `<div class="ev"><span class="t">${fmtTime(e.time)}</span><span>${e.currency} · ${e.title}</span>
+        ${e.r60_med != null ? `<span class="x" title="${e.known ? e.n + " тохиолдол" : "түүх алга — ерөнхий дундаж"}"><b>~${e.r60_med.toFixed(0)}</b>/${e.r60_q90.toFixed(0)} пип · ×${e.mult.toFixed(1)}</span>` : ""}</div>`).join("")
     : `<p class="note">${data.model === "live_news" ? "Ойрын 48 цагт өндөр нөлөөтэй мэдээ алга." : "Календарь татагдаагүй (мэдээгүй загвар)."}</p>`;
+  const soon = ups.filter((e) => e.mult != null && e.time - data.made_at <= 24 * 3600).sort((a, b) => b.mult - a.mult)[0];
+  const same = soon ? ups.filter((e) => e.time === soon.time).map((e) => shortTitle(e.title)).join(" + ") : "";
+  $("newsAlert").innerHTML = soon && soon.mult >= 2
+    ? `<div class="alert">⚠ ${fmtTime(soon.time)} — <b>${same}</b>: ердийнхөөс ~${soon.mult.toFixed(1)}× том хөдөлгөөн (60 минутад медиан ${soon.r60_med.toFixed(0)}, 10 тохиолдлын 1-д ${soon.r60_q90.toFixed(0)}+ пип). Stop-ийн зай, байрлалын хэмжээгээ үүнд тааруулна уу.</div>` : "";
+
+  const pm = data.postmortem || { items: [], summary: {} };
+  const s2 = pm.summary || {};
+  $("pmSummary").textContent = s2.n
+    ? `Нийт ${s2.n} мэдээ: хүлээгдсэн хүрээнд ${s2.inside}, томоос ${s2.bigger}, бага ${s2.smaller}.` +
+      (s2.n_dir ? ` Чиглэл: ${Math.round(s2.hit * s2.n_dir)}/${s2.n_dir} таарсан (түүхэн дундаж ~70%).` : " Чиглэл: actual алга (data/live/actuals.csv-д бөглөж болно).")
+    : "Сүүлийн 72 цагт шинжлэх мэдээ алга.";
+  const sizeTag = (s) => s.startsWith("хүлээгдсэнээс том") ? "big" : s.startsWith("хүлээгдсэнээс бага") ? "small" : "";
+  $("postmortem").innerHTML = (pm.items || []).map((i) => `<div class="pm">
+      <div class="h"><span class="t">${fmtTime(i.time)}</span><span>${i.titles.map((t) => shortTitle(t.split(" · ")[1] || t)).join(", ")}</span></div>
+      <div class="d"><span class="tag ${sizeTag(i.size)}">${i.size}</span>60м: <b>${i.R60.toFixed(0)}</b> пип (хүлээлт ${i.expected[0].toFixed(0)}–${i.expected[2].toFixed(0)}) · эхний 5м ${i.J >= 0 ? "+" : ""}${i.J.toFixed(1)}</div>
+      <div class="d">${i.hit === true ? '<span class="hit">чиглэл таарсан</span>' : i.hit === false ? '<span class="miss">чиглэл таараагүй</span>' : ""}${i.reason ? (i.hit === false ? " — " : "") + i.reason : ""}</div>
+    </div>`).join("");
 
   const sc = data.live_score || {};
   $("sN").textContent = sc.n_scored || 0;
@@ -355,6 +469,8 @@ function tick() {
   $("countdown").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+$("view").addEventListener("change", (e) => { view = e.target.value; draw(false); });
+$("lvl").addEventListener("input", (e) => { level = +e.target.value; draw(true); });
 $("tz").addEventListener("change", (e) => { tzShift = +e.target.value; if (data) { renderPanel(); draw(false); } });
 function fitHeader() { document.documentElement.style.setProperty('--hdr', document.querySelector('header').offsetHeight + 'px'); }
 window.addEventListener('resize', fitHeader); fitHeader();

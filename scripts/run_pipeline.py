@@ -28,7 +28,7 @@ def main():
     ap.add_argument("--db", default="data/fx.db")
     ap.add_argument("--out", default="data/processed")
     ap.add_argument("--start", default="2015-01-01")
-    ap.add_argument("--end", default="2026-01-01")
+    ap.add_argument("--end", default="2026-12-01")
     ap.add_argument("--keep-db", action="store_true",
                     help="Хуучин DB-г устгахгүй (анхдагчаар дахин үүсгэнэ: INSERT OR IGNORE хуучин буруу мөрийг үлдээдэг)")
     a = ap.parse_args()
